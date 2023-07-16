@@ -3,7 +3,9 @@
 
 #include "multicurl.hpp"
 #include "task.hpp"
+#include <exception>
 #include <map>
+#include <utility/format.hpp>
 #include <coroutine>
 
 namespace toolbox {
@@ -167,6 +169,40 @@ template <typename T> struct fetch_task {
 		return std::move(*promise().result);
 	}
 };
+
+struct http_error: std::runtime_error {
+	http_error(std::string str): std::runtime_error{str} { }
+};
+
+auto simple_fetch(std::string_view url) -> fetch_task<std::vector<std::byte>> {
+	toolbox::easycurl request{};
+
+	// will download from ...
+	request.url(url);
+
+	// behave nicely to servers and use piping in case available
+	request.pipewait();
+
+	// store result to output
+	std::vector<std::byte> output;
+
+	request.write_function([](std::span<const std::byte> in, std::vector<std::byte> & output) { std::copy(in.begin(), in.end(), std::back_inserter(output)); }, output);
+
+	// inform user
+	std::cout << " [fetching '" << url << "' ...]\n";
+
+	// process it asynchonously
+	co_await toolbox::with_multicurl(request);
+
+	// inform user
+	std::cout << " [fetching of '" << url << "' finished (size = " << toolbox::data_size(output.size()) << ", code = " << request.get_response_code() << ")]\n";
+
+	if (request.get_response_code() != 200) {
+		throw http_error{std::string(url)};
+	}
+
+	co_return output;
+}
 
 } // namespace toolbox
 

@@ -170,13 +170,13 @@ public:
 	}
 
 	template <std::default_initializable CB, typename T> inline void write_function(CB &&, T & obj) noexcept
-		requires(std::is_invocable_v<CB, T &, std::span<const std::byte>>)
+		requires(std::is_invocable_v<CB, std::span<const std::byte>, T &>)
 	{
 		const auto helper_function = +[](char * ptr, size_t size, size_t nmemb, void * udata) -> size_t {
 			T & obj = *static_cast<T *>(udata);
 
 			try {
-				CB{}(obj, std::span<const std::byte>(reinterpret_cast<std::byte *>(ptr), size * nmemb));
+				CB{}(std::span<const std::byte>(reinterpret_cast<std::byte *>(ptr), size * nmemb), obj);
 				return size * nmemb;
 			} catch (...) {
 				// in case of exception propagate the error as transfer error :(
@@ -193,12 +193,12 @@ public:
 		requires(std::is_invocable_v<CB, std::span<const std::byte>>)
 	{
 		// use a dummy parameter to satisfy the API
-		write_function([](const empty_type &, std::span<const std::byte> in) { CB{}(in); }, empty_value_of_empty_type);
+		write_function([](std::span<const std::byte> in, const empty_type &) { CB{}(in); }, empty_value_of_empty_type);
 	}
 
 	template <std::invocable<std::span<const std::byte>> F> inline void write_function(F & fnc) noexcept {
 		// just pass the reference value as a parameter
-		write_function([](F & fnc, std::span<const std::byte> in) { fnc(in); }, fnc);
+		write_function([](std::span<const std::byte> in, F & fnc) { fnc(in); }, fnc);
 	}
 
 	template <typename... Args> inline void write_function(Args &&...) {
@@ -210,55 +210,16 @@ public:
 		curl_easy_setopt(native_handle(), CURLOPT_HEADERDATA, static_cast<const void *>(&fnc));
 	}
 
-	inline void url(const char * value) noexcept {
-		curl_easy_setopt(native_handle(), CURLOPT_URL, value);
-	}
-
-	inline void url(const std::string & value) noexcept {
-		url(value.c_str());
-	}
-
-	inline void url(std::string_view value) {
-		// TODO I know :(
-		url(std::string(value));
-	}
-
-	inline void buffer_size(signed long sz = 1024L * 1024L) noexcept {
-		curl_easy_setopt(native_handle(), CURLOPT_BUFFERSIZE, sz);
-	}
-
-	inline unsigned perform() noexcept {
-		return static_cast<unsigned>(curl_easy_perform(native_handle()));
-	}
-
-	inline void force_fresh() noexcept {
-		curl_easy_setopt(native_handle(), CURLOPT_FRESH_CONNECT, 1L);
-	}
-
-	inline void pipewait() {
-		curl_easy_setopt(native_handle(), CURLOPT_PIPEWAIT, 1L);
-	}
-
-	inline void follow_location() {
-		curl_easy_setopt(native_handle(), CURLOPT_FOLLOWLOCATION, 1L);
-	}
-
-	inline auto get_content_length() const noexcept -> std::optional<size_t> {
-		curl_off_t result{0};
-		curl_easy_getinfo(handle, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &result);
-
-		if (result == -1) {
-			return std::nullopt;
-		}
-
-		return static_cast<size_t>(result);
-	}
-
-	inline long get_response_code() const noexcept {
-		long result = 0;
-		curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &result);
-		return result;
-	}
+	void url(const char * value) noexcept;
+	void url(const std::string & value) noexcept;
+	void url(std::string_view value);
+	void buffer_size(signed long sz = 1024L * 1024L) noexcept;
+	unsigned perform() noexcept;
+	void force_fresh() noexcept;
+	void pipewait();
+	void follow_location();
+	auto get_content_length() const noexcept -> std::optional<size_t>;
+	long get_response_code() const noexcept;
 
 	inline void * native_handle() noexcept {
 		return handle;
