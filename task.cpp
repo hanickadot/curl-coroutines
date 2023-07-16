@@ -1,6 +1,7 @@
 #include <iostream>
 #include <multicurl/fetch-task.hpp>
 #include <multicurl/task.hpp>
+#include <numeric>
 #include <utility/format.hpp>
 
 auto download_all() -> toolbox::task<size_t> {

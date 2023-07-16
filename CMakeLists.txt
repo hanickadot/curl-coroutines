@@ -10,3 +10,6 @@ add_subdirectory(source)
 
 add_executable(task task.cpp)
 target_link_libraries(task multicurl)
+
+add_executable(download_all download_all.cpp)
+target_link_libraries(download_all multicurl)

@@ -49,6 +49,23 @@ template <typename T> struct task {
 
 	task(handle_type h): handle{h} { }
 
+	task(const task &) = delete;
+
+	task(task && other) noexcept: handle{std::exchange(other.handle, nullptr)} { }
+
+	task & operator=(const task &) = delete;
+
+	task & operator=(task && other) noexcept {
+		std::swap(handle, other.handle);
+		return *this;
+	}
+
+	~task() {
+		if (handle) {
+			handle.destroy();
+		}
+	}
+
 	bool await_ready() const noexcept {
 		return handle.done();
 	}
@@ -116,6 +133,23 @@ template <> struct task<void> {
 	handle_type handle;
 
 	task(handle_type h): handle{h} { }
+
+	task(const task &) = delete;
+
+	task(task && other) noexcept: handle{std::exchange(other.handle, nullptr)} { }
+
+	task & operator=(const task &) = delete;
+
+	task & operator=(task && other) noexcept {
+		std::swap(handle, other.handle);
+		return *this;
+	}
+
+	~task() {
+		if (handle) {
+			handle.destroy();
+		}
+	}
 
 	bool await_ready() const noexcept {
 		return handle.done();

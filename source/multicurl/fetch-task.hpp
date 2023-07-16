@@ -139,6 +139,23 @@ template <typename T> struct fetch_task {
 
 	fetch_task(handle_type h): handle{h} { }
 
+	fetch_task(const fetch_task &) = delete;
+
+	fetch_task(fetch_task && other) noexcept: handle{std::exchange(other.handle, nullptr)} { }
+
+	fetch_task & operator=(const fetch_task &) = delete;
+
+	fetch_task & operator=(fetch_task && other) noexcept {
+		std::swap(handle, other.handle);
+		return *this;
+	}
+
+	~fetch_task() {
+		if (handle) {
+			handle.destroy();
+		}
+	}
+
 	promise_type & promise() {
 		return handle.promise();
 	}
@@ -174,7 +191,7 @@ struct http_error: std::runtime_error {
 	http_error(std::string str): std::runtime_error{str} { }
 };
 
-auto simple_fetch(std::string_view url) -> fetch_task<std::vector<std::byte>> {
+auto simple_fetch(std::string url) -> fetch_task<std::vector<std::byte>> {
 	toolbox::easycurl request{};
 
 	// will download from ...
