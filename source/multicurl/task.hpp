@@ -7,110 +7,109 @@
 
 namespace toolbox {
 
-template <typename T> struct result_storage {
-	std::optional<T> result{std::nullopt};
+template <typename T> struct task {
+	struct promise_type {
+		std::coroutine_handle<> previous;
 
-	template <std::convertible_to<T> Y> void return_value(Y && arg) {
-		result = std::forward<Y>(arg);
-	}
+		std::optional<T> data;
 
-	T & get_result() & noexcept {
-		assert(result.has_value());
-		return *result;
-	}
+		template <std::convertible_to<T> Y> void return_value(Y && value) noexcept {
+			data = std::move(value);
+		}
 
-	T get_result() && noexcept {
-		assert(result.has_value());
-		return *result;
-	}
-};
+		auto get_return_object() noexcept {
+			return std::coroutine_handle<promise_type>::from_promise(*this);
+		}
 
-template <typename T> concept has_get_result = requires(T & ref, T && temporary) {
-	ref.get_result();
-	temporary.get_result();
-};
+		void unhandled_exception() { std::terminate(); }
 
-template <> struct result_storage<void> {
-	void return_void() noexcept {
-	}
-};
+		auto initial_suspend() const noexcept { return std::suspend_never{}; }
+		auto final_suspend() const noexcept {
+			struct jump_to_other_coroutine {
+				bool await_ready() const noexcept { return false; }
+				void await_resume() const noexcept { }
+				auto await_suspend(std::coroutine_handle<promise_type> handle) -> std::coroutine_handle<> {
+					const auto previous = handle.promise().previous;
+					if (previous == nullptr) {
+						return std::noop_coroutine();
+					}
+					return previous;
+				}
+			};
+			return jump_to_other_coroutine{};
+		}
+	};
 
-template <typename T> struct task_initial_suspend {
-	T initial_suspend() {
-		return {};
-	}
-};
-
-template <typename T> struct task_final_suspend {
-	T final_suspend() noexcept {
-		return {};
-	}
-};
-
-template <typename... Pieces> struct task_promise: Pieces... {
-	task_promise(): Pieces{}... { }
-
-	auto get_return_object() {
-		return std::coroutine_handle<task_promise>::from_promise(*this);
-	}
-
-	void unhandled_exception() noexcept {
-	}
-};
-
-template <typename T> struct immediate_task {
-	using promise_type = task_promise<result_storage<T>, task_initial_suspend<std::suspend_never>, task_final_suspend<std::suspend_always>>;
 	using handle_type = std::coroutine_handle<promise_type>;
 
-	handle_type handle{};
+	handle_type handle;
 
-	immediate_task(handle_type h): handle{h} { }
+	task(handle_type h): handle{h} { }
 
-	promise_type & promise() {
-		return handle.promise();
+	bool await_ready() const noexcept {
+		return handle.done();
 	}
 
-	operator T &() & requires has_get_result<promise_type> {
-		return promise().get_result();
+	void await_suspend(std::coroutine_handle<> coroutine) const noexcept {
+		handle.promise().previous = coroutine;
 	}
 
-	operator T() && requires has_get_result<promise_type> {
-		return promise().get_result();
+	T await_resume() const noexcept {
+		assert(handle.promise().data.has_value());
+		return std::move(*handle.promise().data);
 	}
-};
 
-struct hana_suspend {
-	bool await_ready() {
-		return false;
-	}
-	std::coroutine_handle<> await_suspend(std::coroutine_handle<> handle) {
-		std::cout << handle.address() << "\n";
-		return handle;
-	}
-	void await_resume() {
-		return;
+	operator T() {
+		assert(handle.promise().data.has_value());
+		return std::move(*handle.promise().data);
 	}
 };
 
-template <typename T> struct special_task {
-	using promise_type = task_promise<result_storage<T>, task_initial_suspend<hana_suspend>, task_final_suspend<std::suspend_always>>;
+template <> struct task<void> {
+	struct promise_type {
+		std::coroutine_handle<> previous;
+
+		void return_void() noexcept { }
+
+		auto get_return_object() noexcept {
+			return std::coroutine_handle<promise_type>::from_promise(*this);
+		}
+
+		void unhandled_exception() { std::terminate(); }
+
+		auto initial_suspend() const noexcept { return std::suspend_never{}; }
+		auto final_suspend() const noexcept {
+			struct jump_to_other_coroutine {
+				bool await_ready() const noexcept { return false; }
+				void await_resume() const noexcept { }
+				auto await_suspend(std::coroutine_handle<promise_type> handle) -> std::coroutine_handle<> {
+					const auto previous = handle.promise().previous;
+					if (previous == nullptr) {
+						// in case there is no previous ... just stop the chain (because we are the top coroutine)
+						return std::noop_coroutine();
+					}
+					return previous;
+				}
+			};
+			return jump_to_other_coroutine{};
+		}
+	};
+
 	using handle_type = std::coroutine_handle<promise_type>;
 
-	handle_type handle{};
+	handle_type handle;
 
-	special_task(handle_type h): handle{h} { }
+	task(handle_type h): handle{h} { }
 
-	promise_type & promise() {
-		return handle.promise();
+	bool await_ready() const noexcept {
+		return handle.done();
 	}
 
-	operator T &() & requires has_get_result<promise_type> {
-		return promise().get_result();
+	void await_suspend(std::coroutine_handle<> coroutine) const noexcept {
+		handle.promise().previous = coroutine;
 	}
 
-	operator T() && requires has_get_result<promise_type> {
-		return promise().get_result();
-	}
+	void await_resume() const noexcept { }
 };
 
 } // namespace toolbox

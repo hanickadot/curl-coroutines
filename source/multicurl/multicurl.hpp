@@ -250,6 +250,12 @@ public:
 		return static_cast<size_t>(result);
 	}
 
+	inline long get_response_code() const noexcept {
+		long result = 0;
+		curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &result);
+		return result;
+	}
+
 	inline void * native_handle() noexcept {
 		return handle;
 	}
@@ -287,8 +293,8 @@ public:
 	}
 
 	void add_handle(easycurl & single_request_handler) {
-		const auto r = curl_multi_add_handle(native_handle(), single_request_handler.native_handle());
-		std::cout << "curl_multi_add_handle -> " << curl_multi_strerror(r) << "\n";
+		[[maybe_unused]] const auto r = curl_multi_add_handle(native_handle(), single_request_handler.native_handle());
+		// std::cout << "curl_multi_add_handle -> " << curl_multi_strerror(r) << "\n";
 	}
 
 	auto perform() -> std::optional<unsigned> {
@@ -296,7 +302,7 @@ public:
 
 		const auto r = curl_multi_perform(native_handle(), &count);
 
-		std::cout << "curl_multi_perform -> " << r << " (count = " << count << ")\n";
+		// std::cout << "curl_multi_perform -> " << r << " (count = " << count << ")\n";
 
 		if (r != CURLM_OK) {
 			return std::nullopt;

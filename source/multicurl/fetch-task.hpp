@@ -12,32 +12,38 @@ struct multicurl_scheduler {
 	std::map<void *, std::coroutine_handle<>> associated_coroutines{};
 	multicurl handle{};
 
+	multicurl_scheduler() {
+		handle.enable_multiplexing();
+	}
+
 	void associate(easycurl & request, std::coroutine_handle<> coroutine) {
 		auto [it, success] = associated_coroutines.emplace(request.native_handle(), coroutine);
 
 		assert(success);
-		std::cout << "> add handle to multicurl...\n";
 		handle.add_handle(request);
 	}
 
 	auto select_next() -> std::coroutine_handle<> {
-		std::cout << "> select_next() size = " << associated_coroutines.size() << "\n";
 		for (;;) {
 			const auto opt_count = handle.perform();
 
-			std::cout << "> perform = " << *opt_count << "\n";
-			// check if something ended...
+			// std::cout << "> perform = " << *opt_count << "\n";
+			//  check if something ended...
 			for (;;) {
 				[[maybe_unused]] int msgs_in_queue = 0;
 				struct CURLMsg * m = curl_multi_info_read(handle.native_handle(), &msgs_in_queue);
 
 				if (m && m->msg == CURLMSG_DONE) {
-					std::cout << "> coroutine selected!\n";
 					const auto it = associated_coroutines.find(m->easy_handle);
 
 					assert(it != associated_coroutines.end());
 
-					return it->second;
+					const auto next_coroutine = it->second;
+
+					associated_coroutines.erase(it);
+					curl_multi_remove_handle(handle.native_handle(), m->easy_handle);
+
+					return next_coroutine;
 				} else {
 					break;
 				}
@@ -64,12 +70,11 @@ struct with_multicurl {
 };
 
 template <typename T> struct fetch_promise {
-	multicurl_scheduler scheduler{};
+	multicurl_scheduler & scheduler = get_global_multicurl_scheduler();
 
 	std::optional<T> result{std::nullopt};
 
 	// jumps to caller and awaiter :)
-	std::coroutine_handle<> caller{nullptr};
 	std::coroutine_handle<> awaiter{nullptr};
 
 	auto self() -> std::coroutine_handle<fetch_promise> {
@@ -77,43 +82,14 @@ template <typename T> struct fetch_promise {
 	}
 
 	auto initial_suspend() {
-		struct store_caller_in_promise {
-			fetch_promise & promise;
-			bool await_ready() {
-				return false;
-			}
-			bool await_suspend(std::coroutine_handle<> caller) {
-				std::cout << "storing caller... " << caller.address() << "\n";
-				promise.caller = caller;
-				return false;
-			}
-			bool await_suspend(std::coroutine_handle<fetch_promise>) = delete;
-			void await_resume() { }
-		};
-		return store_caller_in_promise{*this};
+		return std::suspend_never{};
 	}
 
 	auto await_transform(with_multicurl tag) {
-		struct register_in_multicurl_and_jump_to_caller {
-			easycurl & request_handle;
-			fetch_promise & promise;
-
-			bool await_ready() {
-				return false;
-			}
-
-			auto await_suspend(std::coroutine_handle<fetch_promise> caller) {
-				promise.scheduler.associate(request_handle, promise.self());
-				std::cout << "jumping back to caller... " << promise.caller.address() << ", self = " << promise.self().address() << "\n";
-
-				// we got caller stored in initia_suspend
-				assert(promise.caller != nullptr);
-				return promise.caller;
-			}
-
-			void await_resume() { }
-		};
-		return register_in_multicurl_and_jump_to_caller{tag.handle, *this};
+		// just associate and pause here
+		scheduler.associate(tag.handle, self());
+		// and go back to caller
+		return std::suspend_always();
 	}
 
 	auto final_suspend() noexcept {
@@ -124,12 +100,10 @@ template <typename T> struct fetch_promise {
 			}
 			auto await_suspend(std::coroutine_handle<> myself) noexcept -> std::coroutine_handle<> {
 				if (promise.awaiter != nullptr) {
-					std::cout << "we have someone waiting for us...\n";
 					// if have awaiting caller, just jump there
 					return promise.awaiter;
 				} else {
-					std::cout << "multicurl looks for next one...\n";
-					// TODO multicurl to select next coroutine (as there is no one waiting for me, yet)
+					// if not, look into the download scheduler for something else
 					return promise.scheduler.select_next();
 				}
 			}
@@ -143,18 +117,8 @@ template <typename T> struct fetch_promise {
 		return self();
 	}
 
-	T & get_result() & {
-		assert(result.has_value());
-		return *result;
-	}
-
-	T get_result() && {
-		assert(result.has_value());
-		return std::move(*result);
-	}
-
 	template <std::convertible_to<T> Y> void return_value(Y && value) {
-		value = std::move(value);
+		result = std::move(value);
 	}
 
 	void unhandled_exception() noexcept {
@@ -180,32 +144,23 @@ template <typename T> struct fetch_task {
 		return handle.promise();
 	}
 
-	operator T &() & requires has_get_result<promise_type> {
-		return promise().get_result();
-	}
-
-	operator T() && requires has_get_result<promise_type> {
-		return promise().get_result();
-	}
-
 	bool await_ready() const noexcept {
-		return promise().result.has_value();
+		// if result is there, we won't suspend
+		return handle.done();
 	}
 
 	auto await_suspend(std::coroutine_handle<> awaiter_for_result) -> std::coroutine_handle<> {
-		// we know we need to suspend, which means we didn't finished yet
-		// we need to run multi_curl_process to let the coroutine finish
+		// make sure no-one else already waits for this task
 		assert(handle.promise().awaiter == nullptr);
 		handle.promise().awaiter = awaiter_for_result;
 
-		std::cout << "awaiting for result...\n";
-		// TODO select next coroutine with multicurl to jump to, there must be some maybe this task as otherwise we wouldn't suspend
-
+		// because the result is still not there, we need to schedule something else...
 		return promise().scheduler.select_next();
 	}
 
 	T await_resume() noexcept {
-		return std::move(promise().get_result());
+		// and result is here
+		return std::move(*promise().result);
 	}
 };
 
