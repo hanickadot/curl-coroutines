@@ -168,7 +168,10 @@ template <typename T> struct awaitable_fetcher {
 	//	return std::noop_coroutine();
 	// }
 
-	T await_resume() noexcept {
+	T await_resume() {
+		if (auto eptr = handle.promise().exception) {
+			std::rethrow_exception(eptr);
+		}
 		return std::move(result);
 	}
 };

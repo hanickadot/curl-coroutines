@@ -73,6 +73,7 @@ template <typename T> struct fetch_promise {
 	multicurl_scheduler & scheduler = get_global_multicurl_scheduler();
 
 	std::optional<T> result{std::nullopt};
+	std::exception_ptr exception{nullptr};
 
 	// jumps to caller and awaiter :)
 	std::coroutine_handle<> awaiter{nullptr};
@@ -122,7 +123,7 @@ template <typename T> struct fetch_promise {
 	}
 
 	void unhandled_exception() noexcept {
-		std::terminate();
+		exception = std::current_exception();
 	}
 };
 
@@ -158,7 +159,10 @@ template <typename T> struct fetch_task {
 		return promise().scheduler.select_next();
 	}
 
-	T await_resume() noexcept {
+	T await_resume() {
+		if (auto eptr = handle.promise().exception) {
+			std::rethrow_exception(eptr);
+		}
 		// and result is here
 		return std::move(*promise().result);
 	}

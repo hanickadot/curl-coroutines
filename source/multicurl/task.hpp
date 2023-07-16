@@ -12,6 +12,7 @@ template <typename T> struct task {
 		std::coroutine_handle<> previous;
 
 		std::optional<T> data;
+		std::exception_ptr exception{nullptr};
 
 		template <std::convertible_to<T> Y> void return_value(Y && value) noexcept {
 			data = std::move(value);
@@ -21,7 +22,9 @@ template <typename T> struct task {
 			return std::coroutine_handle<promise_type>::from_promise(*this);
 		}
 
-		void unhandled_exception() { std::terminate(); }
+		void unhandled_exception() {
+			exception = std::current_exception();
+		}
 
 		auto initial_suspend() const noexcept { return std::suspend_never{}; }
 		auto final_suspend() const noexcept {
@@ -54,20 +57,31 @@ template <typename T> struct task {
 		handle.promise().previous = coroutine;
 	}
 
-	T await_resume() const noexcept {
+	T await_resume() const {
+		if (auto eptr = handle.promise().exception) {
+			std::rethrow_exception(eptr);
+		}
+		assert(handle.promise().data.has_value());
+		return std::move(*handle.promise().data);
+	}
+
+	T get() {
+		if (auto eptr = handle.promise().exception) {
+			std::rethrow_exception(eptr);
+		}
 		assert(handle.promise().data.has_value());
 		return std::move(*handle.promise().data);
 	}
 
 	operator T() {
-		assert(handle.promise().data.has_value());
-		return std::move(*handle.promise().data);
+		return get();
 	}
 };
 
 template <> struct task<void> {
 	struct promise_type {
 		std::coroutine_handle<> previous;
+		std::exception_ptr exception{nullptr};
 
 		void return_void() noexcept { }
 
@@ -75,7 +89,9 @@ template <> struct task<void> {
 			return std::coroutine_handle<promise_type>::from_promise(*this);
 		}
 
-		void unhandled_exception() { std::terminate(); }
+		void unhandled_exception() {
+			exception = std::current_exception();
+		}
 
 		auto initial_suspend() const noexcept { return std::suspend_never{}; }
 		auto final_suspend() const noexcept {
@@ -109,7 +125,17 @@ template <> struct task<void> {
 		handle.promise().previous = coroutine;
 	}
 
-	void await_resume() const noexcept { }
+	void await_resume() const {
+		if (auto eptr = handle.promise().exception) {
+			std::rethrow_exception(eptr);
+		}
+	}
+
+	void get() {
+		if (auto eptr = handle.promise().exception) {
+			std::rethrow_exception(eptr);
+		}
+	}
 };
 
 } // namespace toolbox

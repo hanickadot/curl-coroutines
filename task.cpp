@@ -32,6 +32,7 @@ template <byte_like_value_type Result> auto generic_fetch(std::string_view url) 
 	std::cout << "[download of '" << url << "' finished... (size = " << toolbox::data_size(output.size()) << ", code = " << request.get_response_code() << ")]\n";
 
 	if (request.get_response_code() != 200) {
+		throw std::invalid_argument{"42"};
 		co_return Result{};
 	}
 
@@ -52,9 +53,19 @@ auto fetch_size(std::string_view url) -> toolbox::task<size_t> {
 }
 
 auto download_all() -> toolbox::task<size_t> {
-	auto index = co_await fetch_string("https://hanickadot.github.io/index.html");
+	try {
+		auto index = co_await fetch_string("https://hanickadot.github.io/index2.html");
 
-	if (index == "") {
+		if (index == "") {
+			co_return 42;
+		}
+	} catch (...) {
+		std::cout << "missing index2.html\n";
+	}
+
+	auto index = co_await fetch_binary("https://hanickadot.github.io/index.html");
+
+	if (index == std::vector<std::byte>{}) {
 		co_return 42;
 	}
 
@@ -66,7 +77,7 @@ auto download_all() -> toolbox::task<size_t> {
 	// const size_t image_size = (co_await image).size();
 	// const size_t index_size = (co_await index).size();
 
-	co_return index.size() + (co_await image1).size() + (co_await image2).size();
+	co_return (co_await image1).size() + (co_await image2).size();
 }
 
 auto intermediate() -> toolbox::task<void> {
@@ -75,5 +86,9 @@ auto intermediate() -> toolbox::task<void> {
 }
 
 int main() {
-	intermediate();
+	try {
+		intermediate().get();
+	} catch (...) {
+		std::cout << "mooo\n";
+	}
 }
