@@ -239,6 +239,10 @@ public:
 		curl_easy_setopt(native_handle(), CURLOPT_PIPEWAIT, 1L);
 	}
 
+	inline void follow_location() {
+		curl_easy_setopt(native_handle(), CURLOPT_FOLLOWLOCATION, 1L);
+	}
+
 	inline auto get_content_length() const noexcept -> std::optional<size_t> {
 		curl_off_t result{0};
 		curl_easy_getinfo(handle, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &result);

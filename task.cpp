@@ -31,6 +31,10 @@ template <byte_like_value_type Result> auto generic_fetch(std::string_view url) 
 
 	std::cout << "[download of '" << url << "' finished... (size = " << toolbox::data_size(output.size()) << ", code = " << request.get_response_code() << ")]\n";
 
+	if (request.get_response_code() != 200) {
+		co_return Result{};
+	}
+
 	co_return output;
 }
 
@@ -43,21 +47,26 @@ auto fetch_string(std::string_view url) {
 }
 
 auto fetch_size(std::string_view url) -> toolbox::task<size_t> {
-	const auto result = co_await fetch_binary(url);
-	co_return result.size();
+	auto result = fetch_binary(url);
+	co_return (co_await result).size();
 }
 
 auto download_all() -> toolbox::task<size_t> {
-	auto image = fetch_binary("https://hanickadot.github.io/new-york-2022/img/FPL03986.jpg");
-	auto index = fetch_string("https://hanickadot.github.io/cxindex.html");
-	auto image2_size = fetch_size("https://hanickadot.github.io/new-york-2022/img/FPL04038.jpg");
+	auto index = co_await fetch_string("https://hanickadot.github.io/index.html");
+
+	if (index == "") {
+		co_return 42;
+	}
+
+	auto image1 = fetch_binary("https://hanickadot.github.io/new-york-2022/img/FPL03986.jpg");
+	auto image2 = fetch_binary("https://hanickadot.github.io/new-york-2022/img/FPL04038.jpg");
 
 	// co_return co_await image2_size;
 
-	const size_t image_size = (co_await image).size();
-	const size_t index_size = (co_await index).size();
+	// const size_t image_size = (co_await image).size();
+	// const size_t index_size = (co_await index).size();
 
-	co_return image_size + index_size + co_await image2_size;
+	co_return index.size() + (co_await image1).size() + (co_await image2).size();
 }
 
 auto intermediate() -> toolbox::task<void> {
