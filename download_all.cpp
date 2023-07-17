@@ -21,7 +21,7 @@ auto all_done(std::vector<toolbox::fetch_task<std::vector<std::byte>>> in) -> to
 auto download_files(std::vector<std::string> in) -> std::vector<toolbox::fetch_task<std::vector<std::byte>>> {
 	auto result = std::vector<toolbox::fetch_task<std::vector<std::byte>>>{};
 
-	std::transform(in.begin(), in.end(), std::back_inserter(result), [](const std::string & url) { return toolbox::simple_fetch(url); });
+	std::transform(in.begin(), in.end(), std::back_inserter(result), [](const std::string & url) { return toolbox::binary_fetch(url); });
 
 	return result;
 }

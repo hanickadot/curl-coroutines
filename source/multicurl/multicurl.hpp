@@ -201,6 +201,38 @@ public:
 		write_function([](std::span<const std::byte> in, F & fnc) { fnc(in); }, fnc);
 	}
 
+	template <std::default_initializable CB, typename T> inline void write_function(CB &&, T & obj) noexcept
+		requires(std::is_invocable_v<CB, std::string_view, T &>)
+	{
+		const auto helper_function = +[](char * ptr, size_t size, size_t nmemb, void * udata) -> size_t {
+			T & obj = *static_cast<T *>(udata);
+
+			try {
+				CB{}(std::string_view(ptr, size * nmemb), obj);
+				return size * nmemb;
+			} catch (...) {
+				// in case of exception propagate the error as transfer error :(
+				// TODO: do something about it
+				return (std::numeric_limits<size_t>::max)();
+			}
+		};
+
+		curl_easy_setopt(native_handle(), CURLOPT_WRITEFUNCTION, helper_function);
+		curl_easy_setopt(native_handle(), CURLOPT_WRITEDATA, static_cast<const void *>(&obj));
+	}
+
+	template <std::default_initializable CB> inline void write_function(CB &&) noexcept
+		requires(std::is_invocable_v<CB, std::string_view>)
+	{
+		// use a dummy parameter to satisfy the API
+		write_function([](std::string_view in, const empty_type &) { CB{}(in); }, empty_value_of_empty_type);
+	}
+
+	template <std::invocable<std::string_view> F> inline void write_function(F & fnc) noexcept {
+		// just pass the reference value as a parameter
+		write_function([](std::string_view in, F & fnc) { fnc(in); }, fnc);
+	}
+
 	template <typename... Args> inline void write_function(Args &&...) {
 		static_assert(always_false<Args...>, "You can't use temporary lambda as `write_function` argument!");
 	}

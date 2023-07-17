@@ -13,3 +13,6 @@ target_link_libraries(task multicurl)
 
 add_executable(download_all download_all.cpp)
 target_link_libraries(download_all multicurl)
+
+add_executable(example example.cpp)
+target_link_libraries(example multicurl)

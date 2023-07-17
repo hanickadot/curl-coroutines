@@ -191,7 +191,7 @@ struct http_error: std::runtime_error {
 	http_error(std::string str): std::runtime_error{str} { }
 };
 
-auto simple_fetch(std::string url) -> fetch_task<std::vector<std::byte>> {
+auto binary_fetch(std::string url) -> fetch_task<std::vector<std::byte>> {
 	toolbox::easycurl request{};
 
 	// will download from ...
@@ -204,6 +204,36 @@ auto simple_fetch(std::string url) -> fetch_task<std::vector<std::byte>> {
 	std::vector<std::byte> output;
 
 	request.write_function([](std::span<const std::byte> in, std::vector<std::byte> & output) { std::copy(in.begin(), in.end(), std::back_inserter(output)); }, output);
+
+	// inform user
+	std::cout << " [fetching '" << url << "' ...]\n";
+
+	// process it asynchonously
+	co_await toolbox::with_multicurl(request);
+
+	// inform user
+	std::cout << " [fetching of '" << url << "' finished (size = " << toolbox::data_size(output.size()) << ", code = " << request.get_response_code() << ")]\n";
+
+	if (request.get_response_code() != 200) {
+		throw http_error{std::string(url)};
+	}
+
+	co_return output;
+}
+
+auto string_fetch(std::string url) -> fetch_task<std::string> {
+	toolbox::easycurl request{};
+
+	// will download from ...
+	request.url(url);
+
+	// behave nicely to servers and use piping in case available
+	request.pipewait();
+
+	// store result to output
+	std::string output;
+
+	request.write_function([](std::string_view in, std::string & output) { std::copy(in.begin(), in.end(), std::back_inserter(output)); }, output);
 
 	// inform user
 	std::cout << " [fetching '" << url << "' ...]\n";
