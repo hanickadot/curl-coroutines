@@ -2,22 +2,30 @@
 #include <multicurl/fetch-task.hpp>
 #include <utility/format.hpp>
 
-auto download_all() -> toolbox::task<std::vector<std::byte>> {
-	auto a = toolbox::binary_fetch("https://hanicka.net/");
-	auto b = toolbox::binary_fetch("https://www.google.com/");
+auto my_fetch(std::string url) -> toolbox::fetch_task<size_t> {
+	toolbox::easycurl h{};
 
-	auto ra = co_await a;
-	auto rb = co_await b;
+	h.url(url);
+	h.write_function([](std::span<const std::byte>) {});
 
-	std::vector<std::byte> output;
+	co_await toolbox::with_multicurl(h);
 
-	std::copy(ra.begin(), ra.end(), std::back_inserter(output));
-	std::copy(rb.begin(), rb.end(), std::back_inserter(output));
+	const auto size = h.get_content_length();
 
-	co_return output;
+	if (!size.has_value()) {
+		co_return 0;
+	}
+
+	co_return *size;
+}
+
+auto download_all() -> toolbox::task<size_t> {
+	auto a = my_fetch("https://hanicka.net/FPL04859.jpg");
+	auto b = my_fetch("https://www.google.com/");
+	co_return (co_await a) + (co_await b);
 }
 
 int main() {
-	std::vector<std::byte> r = download_all();
-	std::cout << r.size() << "\n";
+	size_t result = download_all();
+	std::cout << toolbox::data_size(result) << "\n";
 }

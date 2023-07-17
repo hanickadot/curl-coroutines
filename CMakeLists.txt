@@ -16,3 +16,6 @@ target_link_libraries(download_all multicurl)
 
 add_executable(example example.cpp)
 target_link_libraries(example multicurl)
+
+add_executable(generator generator.cpp)
+target_link_libraries(generator multicurl)
